@@ -1,0 +1,83 @@
+# makefilehub configuration example
+#
+# Configuration files are loaded in order (lowest to highest priority):
+# 1. /etc/makefilehub/config.toml
+# 2. ~/.config/makefilehub/config.toml
+# 3. ~/.makefilehub.toml
+# 4. ./.makefilehub.toml (project root)
+#
+# Interpolation:
+# - $VAR or ${VAR} - environment variable
+# - $(command) - shell command execution
+
+[defaults]
+# Runner detection priority (first found wins)
+runner_priority = ["make", "just", "script"]
+
+# Default script to look for if no Makefile/justfile
+default_script = "./run.sh"
+
+# Task name aliases (normalize across build systems)
+[defaults.task_aliases]
+build = ["build", "compile", "make"]
+test = ["test", "check", "verify"]
+up = ["up", "start", "run"]
+down = ["down", "stop"]
+clean = ["clean", "distclean"]
+
+# Default timeout in seconds (0 = no timeout)
+[defaults]
+timeout = 300
+
+# Runner-specific configuration
+[runners.make]
+command = "make"
+
+[runners.just]
+command = "just"
+
+[runners.script]
+# Scripts to look for in order
+scripts = ["./run.sh", "./build.sh", "./task.sh"]
+
+# Service configurations for rebuild_service orchestration
+# Each service maps to a project directory with build settings
+
+# Example: PHP/Node web application with docker-compose
+[services.web-api]
+project_dir = "$HOME/projects/web-api"
+runner = "script"
+script = "./run.sh"
+depends_on = ["web-frontend"]
+force_recreate = ["nginx-proxy"]
+timeout = 600
+
+[services.web-api.tasks]
+build = "build"
+up = "up"
+test = "test"
+
+[services.web-api.env]
+NODE_ENV = "development"
+DEBUG = "true"
+
+# Example: Go microservice with justfile
+[services.booking-service]
+project_dir = "$HOME/projects/booking-service"
+runner = "just"
+depends_on = ["web-frontend"]
+force_recreate = ["nginx-proxy", "web-frontend"]
+
+# Example: Rust CLI tool with Makefile
+[services.my-cli]
+project_dir = "$HOME/projects/my-cli"
+runner = "make"
+# Uses default make build, make test
+
+# Example: Using environment variable interpolation
+[services.env-example]
+project_dir = "${PROJECTS_DIR}/my-project"
+
+# Example: Using shell command interpolation
+[services.dynamic-example]
+project_dir = "$(pwd)/subproject"

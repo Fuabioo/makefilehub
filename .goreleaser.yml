@@ -1,0 +1,110 @@
+# goreleaser configuration for makefilehub
+# https://goreleaser.com
+#
+# Note: This is a Rust project, so we use hooks to build the binaries
+# and configure goreleaser to package them.
+
+version: 2
+
+project_name: makefilehub
+
+before:
+  hooks:
+    # Build for all target platforms
+    - cargo build --release --target x86_64-unknown-linux-gnu
+    - cargo build --release --target x86_64-apple-darwin
+    - cargo build --release --target aarch64-apple-darwin
+    - cargo build --release --target x86_64-pc-windows-gnu
+
+builds:
+  - id: makefilehub-linux-amd64
+    skip: true
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+  - id: makefilehub-darwin-amd64
+    skip: true
+    goos:
+      - darwin
+    goarch:
+      - amd64
+
+  - id: makefilehub-darwin-arm64
+    skip: true
+    goos:
+      - darwin
+    goarch:
+      - arm64
+
+  - id: makefilehub-windows-amd64
+    skip: true
+    goos:
+      - windows
+    goarch:
+      - amd64
+
+archives:
+  - id: makefilehub
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - config.example.toml
+
+# Build manually-built binaries into archives
+# This section uses the prebuilt binaries from cargo
+extra_files:
+  - glob: target/x86_64-unknown-linux-gnu/release/makefilehub
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: makefilehub
+    repository:
+      owner: yourusername
+      name: homebrew-tap
+    folder: Formula
+    homepage: https://github.com/yourusername/makefilehub
+    description: General-purpose MCP server for build systems
+    license: MIT
+    skip_upload: auto
+    dependencies:
+      - name: rust
+        type: build
+    install: |
+      bin.install "makefilehub"
+    test: |
+      system "#{bin}/makefilehub", "--version"
+
+# GitHub release settings
+release:
+  github:
+    owner: yourusername
+    name: makefilehub
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"

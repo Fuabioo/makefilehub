@@ -1,0 +1,65 @@
+[package]
+name = "makefilehub"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "MCP server for running tasks across Makefile, justfile, and custom scripts"
+license = "MIT"
+repository = "https://github.com/yourusername/makefilehub"
+readme = "README.md"
+keywords = ["mcp", "makefile", "justfile", "build-system", "task-runner"]
+categories = ["development-tools", "command-line-utilities"]
+
+[dependencies]
+# MCP - Official Rust SDK
+rmcp = { version = "0.1", features = ["server", "transport-io"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Config
+figment = { version = "0.10", features = ["toml", "env"] }
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+schemars = "0.8"
+
+# Async
+tokio = { version = "1.42", features = ["full", "process"] }
+
+# Error Handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+colored = "2.2"
+indicatif = "0.17"
+regex = "1.11"
+dirs = "6.0"
+which = "7.0"
+shellexpand = "3.1"
+
+[dev-dependencies]
+tempfile = "3.14"
+assert_cmd = "2.0"
+predicates = "3.1"
+mockall = "0.13"
+tokio-test = "0.4"
+
+[[bin]]
+name = "makefilehub"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "z"
+
+[profile.dev]
+opt-level = 0
+debug = true
