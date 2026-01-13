@@ -662,25 +662,53 @@ impl MakefilehubServer {
                 if let Some(sc) = service_config {
                     for dep in &sc.depends_on {
                         // Try to restart the dependency
-                        if let Ok(dep_path) = self.resolve_project_path(Some(dep), &config) {
-                            if let Ok(dep_runner) = self.get_runner(&dep_path, None, &config) {
-                                let up_task = config
-                                    .services
-                                    .get(dep)
-                                    .and_then(|s| s.tasks.get("up"))
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("up");
+                        match self.resolve_project_path(Some(dep), &config) {
+                            Ok(dep_path) => {
+                                match self.get_runner(&dep_path, None, &config) {
+                                    Ok(dep_runner) => {
+                                        let up_task = config
+                                            .services
+                                            .get(dep)
+                                            .and_then(|s| s.tasks.get("up"))
+                                            .map(|s| s.as_str())
+                                            .unwrap_or("up");
 
-                                let dep_options = RunOptions {
-                                    working_dir: Some(dep_path.clone()),
-                                    ..Default::default()
-                                };
+                                        let dep_options = RunOptions {
+                                            working_dir: Some(dep_path.clone()),
+                                            ..Default::default()
+                                        };
 
-                                if let Ok(result) = dep_runner.run_task(&dep_path, up_task, &dep_options) {
-                                    if result.success {
-                                        services_restarted.push(dep.clone());
+                                        match dep_runner.run_task(&dep_path, up_task, &dep_options) {
+                                            Ok(result) if result.success => {
+                                                services_restarted.push(dep.clone());
+                                            }
+                                            Ok(result) => {
+                                                errors.push(RebuildError {
+                                                    service: dep.clone(),
+                                                    command: format!("{} {}", dep_runner.name(), up_task),
+                                                    exit_code: result.exit_code,
+                                                    stderr: result.stderr,
+                                                    suggestion: Some("Check dependency service logs".to_string()),
+                                                });
+                                            }
+                                            Err(e) => {
+                                                errors.push(RebuildError {
+                                                    service: dep.clone(),
+                                                    command: format!("{} {}", dep_runner.name(), up_task),
+                                                    exit_code: None,
+                                                    stderr: e.to_string(),
+                                                    suggestion: None,
+                                                });
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Failed to get runner for dependency '{}': {}", dep, e);
                                     }
                                 }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to resolve path for dependency '{}': {}", dep, e);
                             }
                         }
                     }
@@ -701,16 +729,63 @@ impl MakefilehubServer {
                             Ok(output) if output.status.success() => {
                                 containers_recreated.push(container.clone());
                             }
-                            _ => {
-                                // Try docker compose (newer syntax)
+                            Ok(output) => {
+                                // docker-compose failed, try docker compose (newer syntax)
                                 let alt_result = std::process::Command::new("docker")
                                     .current_dir(&project_path)
                                     .args(["compose", "up", "-d", "--force-recreate", container])
                                     .output();
 
-                                if let Ok(output) = alt_result {
-                                    if output.status.success() {
+                                match alt_result {
+                                    Ok(alt_output) if alt_output.status.success() => {
                                         containers_recreated.push(container.clone());
+                                    }
+                                    Ok(alt_output) => {
+                                        let stderr = String::from_utf8_lossy(&alt_output.stderr);
+                                        tracing::warn!(
+                                            "Failed to recreate container '{}': {}",
+                                            container,
+                                            stderr
+                                        );
+                                    }
+                                    Err(e) => {
+                                        // Both docker-compose and docker compose failed
+                                        let orig_stderr = String::from_utf8_lossy(&output.stderr);
+                                        tracing::warn!(
+                                            "Failed to recreate container '{}'. docker-compose: {}, docker compose: {}",
+                                            container,
+                                            orig_stderr,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                // docker-compose command not found, try docker compose
+                                let alt_result = std::process::Command::new("docker")
+                                    .current_dir(&project_path)
+                                    .args(["compose", "up", "-d", "--force-recreate", container])
+                                    .output();
+
+                                match alt_result {
+                                    Ok(output) if output.status.success() => {
+                                        containers_recreated.push(container.clone());
+                                    }
+                                    Ok(output) => {
+                                        let stderr = String::from_utf8_lossy(&output.stderr);
+                                        tracing::warn!(
+                                            "Failed to recreate container '{}': {}",
+                                            container,
+                                            stderr
+                                        );
+                                    }
+                                    Err(e2) => {
+                                        tracing::warn!(
+                                            "Failed to recreate container '{}': docker-compose error: {}, docker compose error: {}",
+                                            container,
+                                            e,
+                                            e2
+                                        );
                                     }
                                 }
                             }
