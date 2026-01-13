@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # Build each target in parallel
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Install cargo-zigbuild (Linux only)
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Install Zig (Linux only)
+        if: runner.os == 'Linux'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Build (Linux with zigbuild)
+        if: runner.os == 'Linux'
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Build (macOS native)
+        if: runner.os == 'macOS'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/makefilehub
+
+  # Package all binaries with goreleaser
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare binaries for goreleaser
+        run: |
+          mkdir -p dist
+          for dir in artifacts/binary-*; do
+            target=$(basename "$dir" | sed 's/binary-//')
+            mkdir -p "dist/${target}"
+            cp "$dir/makefilehub" "dist/${target}/"
+          done
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
