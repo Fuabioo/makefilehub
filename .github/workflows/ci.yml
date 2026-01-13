@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        run: cargo build
+
+      - name: Test
+        run: cargo test
