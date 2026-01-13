@@ -24,6 +24,41 @@ pub struct Config {
     /// Service-specific overrides for rebuild_service orchestration
     #[serde(default)]
     pub services: HashMap<String, ServiceConfig>,
+
+    /// Security settings
+    #[serde(default)]
+    pub security: SecurityConfig,
+}
+
+/// Security configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SecurityConfig {
+    /// Allowed project directories (canonicalized paths)
+    /// If empty, defaults to $HOME and current working directory
+    /// Paths must be absolute and will be canonicalized
+    #[serde(default = "default_allowed_paths")]
+    pub allowed_paths: Vec<String>,
+
+    /// Whether to allow arbitrary paths (DANGEROUS - disables path validation)
+    /// Only enable if you trust all callers and understand the risks
+    #[serde(default)]
+    pub allow_any_path: bool,
+}
+
+fn default_allowed_paths() -> Vec<String> {
+    vec![
+        "$HOME".to_string(),
+        "/tmp".to_string(),
+    ]
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            allowed_paths: default_allowed_paths(),
+            allow_any_path: false,
+        }
+    }
 }
 
 /// Default settings applied to all projects
@@ -237,6 +272,69 @@ pub struct ResolvedService {
 }
 
 impl Config {
+    /// Validate that a path is within allowed directories
+    ///
+    /// Returns Ok(canonicalized_path) if the path is allowed, Err otherwise.
+    /// This prevents path traversal attacks and restricts access to configured directories.
+    pub fn validate_path(&self, path: &Path) -> Result<std::path::PathBuf, String> {
+        // If allow_any_path is enabled, skip validation (DANGEROUS)
+        if self.security.allow_any_path {
+            tracing::warn!("Path validation disabled - allow_any_path is enabled");
+            return path.canonicalize().map_err(|e| format!("Failed to canonicalize path: {}", e));
+        }
+
+        // Canonicalize the requested path
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| format!("Path '{}' does not exist or is not accessible: {}", path.display(), e))?;
+
+        // Get expanded allowed paths
+        let allowed = self.get_expanded_allowed_paths();
+
+        // Check if canonical path starts with any allowed path
+        for allowed_path in &allowed {
+            if let Ok(allowed_canonical) = std::path::Path::new(allowed_path).canonicalize() {
+                if canonical.starts_with(&allowed_canonical) {
+                    return Ok(canonical);
+                }
+            }
+        }
+
+        // Also allow current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Ok(cwd_canonical) = cwd.canonicalize() {
+                if canonical.starts_with(&cwd_canonical) {
+                    return Ok(canonical);
+                }
+            }
+        }
+
+        Err(format!(
+            "Path '{}' is outside allowed directories. Allowed: {:?}",
+            canonical.display(),
+            allowed
+        ))
+    }
+
+    /// Get expanded allowed paths (with $HOME expanded)
+    fn get_expanded_allowed_paths(&self) -> Vec<String> {
+        self.security
+            .allowed_paths
+            .iter()
+            .map(|p| {
+                if p.starts_with("$HOME") {
+                    if let Some(home) = dirs::home_dir() {
+                        p.replace("$HOME", home.to_string_lossy().as_ref())
+                    } else {
+                        p.clone()
+                    }
+                } else {
+                    p.clone()
+                }
+            })
+            .collect()
+    }
+
     /// Get resolved configuration for a service
     pub fn get_service(&self, name: &str) -> ResolvedService {
         let service = self.services.get(name);

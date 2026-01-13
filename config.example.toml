@@ -8,7 +8,9 @@
 #
 # Interpolation:
 # - $VAR or ${VAR} - environment variable
-# - $(command) - shell command execution
+#
+# NOTE: Shell command interpolation $(command) was removed for security.
+# Config files from untrusted sources could execute arbitrary code.
 
 [defaults]
 # Runner detection priority (first found wins)
@@ -78,6 +80,21 @@ runner = "make"
 [services.env-example]
 project_dir = "${PROJECTS_DIR}/my-project"
 
-# Example: Using shell command interpolation
-[services.dynamic-example]
-project_dir = "$(pwd)/subproject"
+# Example: Using HOME variable
+[services.home-example]
+project_dir = "$HOME/projects/my-project"
+
+# Security settings (important for MCP server usage)
+[security]
+# Allowed project directories - paths must be within these directories
+# If empty, defaults to $HOME and /tmp
+allowed_paths = [
+    "$HOME",
+    "/tmp",
+    # Add other directories as needed:
+    # "/opt/projects",
+]
+
+# DANGEROUS: Set to true to disable path validation entirely
+# Only enable if you trust all callers
+allow_any_path = false

@@ -86,51 +86,78 @@ impl MakefilehubServer {
     }
 
     /// Resolve a project path from name or path
+    ///
+    /// # Security
+    ///
+    /// All paths are validated against the configured allowed_paths to prevent
+    /// access to arbitrary directories. This protects against path traversal attacks
+    /// when makefilehub is used as an MCP server.
     fn resolve_project_path(
         &self,
         project: Option<&str>,
         config: &Config,
     ) -> Result<PathBuf, TaskError> {
-        match project {
+        let path = match project {
             None => {
                 // Use current directory
-                std::env::current_dir().map_err(TaskError::Io)
+                std::env::current_dir().map_err(TaskError::Io)?
             }
             Some(path_or_name) => {
                 // Check if it's a path
                 let path = PathBuf::from(path_or_name);
                 if path.exists() {
-                    return Ok(path);
-                }
-
-                // Check if it's a service name
-                if let Some(service) = config.services.get(path_or_name) {
+                    path
+                } else if let Some(service) = config.services.get(path_or_name) {
+                    // Check if it's a service name
                     if let Some(ref project_dir) = service.project_dir {
                         let expanded = PathBuf::from(project_dir);
                         if expanded.exists() {
-                            return Ok(expanded);
+                            expanded
+                        } else {
+                            return Err(TaskError::ProjectNotFound {
+                                path: path_or_name.to_string(),
+                                suggestion: Some(format!(
+                                    "Service '{}' directory '{}' does not exist",
+                                    path_or_name, project_dir
+                                )),
+                            });
+                        }
+                    } else {
+                        return Err(TaskError::ProjectNotFound {
+                            path: path_or_name.to_string(),
+                            suggestion: Some(format!(
+                                "Service '{}' has no project_dir configured",
+                                path_or_name
+                            )),
+                        });
+                    }
+                } else {
+                    // Try project patterns
+                    let mut found = None;
+                    for pattern in &config.projects.patterns {
+                        let resolved = pattern.replace("{name}", path_or_name);
+                        let try_path = PathBuf::from(&resolved);
+                        if try_path.exists() {
+                            found = Some(try_path);
+                            break;
                         }
                     }
+                    found.ok_or_else(|| TaskError::ProjectNotFound {
+                        path: path_or_name.to_string(),
+                        suggestion: Some(format!(
+                            "Check if '{}' exists or is configured in services",
+                            path_or_name
+                        )),
+                    })?
                 }
-
-                // Try project patterns
-                for pattern in &config.projects.patterns {
-                    let resolved = pattern.replace("{name}", path_or_name);
-                    let path = PathBuf::from(&resolved);
-                    if path.exists() {
-                        return Ok(path);
-                    }
-                }
-
-                Err(TaskError::ProjectNotFound {
-                    path: path_or_name.to_string(),
-                    suggestion: Some(format!(
-                        "Check if '{}' exists or is configured in services",
-                        path_or_name
-                    )),
-                })
             }
-        }
+        };
+
+        // Validate path is within allowed directories
+        config.validate_path(&path).map_err(|e| TaskError::SecurityViolation {
+            message: e,
+            path: path.display().to_string(),
+        })
     }
 }
 

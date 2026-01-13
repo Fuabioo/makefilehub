@@ -55,6 +55,10 @@ pub enum TaskError {
     #[error("Service not found: {0}")]
     ServiceNotFound(String),
 
+    /// Security violation - path outside allowed directories
+    #[error("Security violation: {message}")]
+    SecurityViolation { message: String, path: String },
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -150,6 +154,17 @@ impl From<&TaskError> for ErrorInfo {
                 message: format!("Service not found: {}", name),
                 error_type: "service_not_found".to_string(),
                 suggestion: Some("Check [services] section in your configuration".to_string()),
+                exit_code: None,
+                stderr: None,
+                available: vec![],
+            },
+            TaskError::SecurityViolation { message, path } => ErrorInfo {
+                message: format!("Security violation: {}", message),
+                error_type: "security_violation".to_string(),
+                suggestion: Some(format!(
+                    "Path '{}' is not in allowed directories. Configure [security].allowed_paths in your config.",
+                    path
+                )),
                 exit_code: None,
                 stderr: None,
                 available: vec![],

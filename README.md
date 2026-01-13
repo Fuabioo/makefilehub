@@ -181,15 +181,17 @@ up = "up"
 ### Interpolation
 
 - `$VAR` or `${VAR}` - Environment variables
-- `$(command)` - Shell command execution
+
+> **Security Note**: Shell command interpolation (`$(command)`) was removed for security.
+> Config files from untrusted sources (e.g., cloned repos) could execute arbitrary code.
 
 Example:
 ```toml
 [services.dynamic]
 project_dir = "${PROJECTS_DIR}/my-project"
 
-[services.current]
-project_dir = "$(pwd)/subproject"
+[services.home-based]
+project_dir = "$HOME/projects/my-app"
 ```
 
 ## Build System Priority
