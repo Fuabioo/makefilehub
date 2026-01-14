@@ -17,10 +17,27 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::traits::{RunOptions, RunResult, Runner, RunnerResult, TaskArg, TaskInfo};
 use crate::error::{suggest_fix, TaskError};
+
+// Static regex patterns - compiled once at first use
+/// Matches Makefile target definitions: "name:"
+static TARGET_RE: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").unwrap()
+);
+
+/// Matches comment descriptions: "## description" or "# target: description"
+static COMMENT_DESC_RE: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"^##\s*(.+)$|^#\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.+)$").unwrap()
+);
+
+/// Matches Make variable references: $(VAR) or ${VAR}
+static MAKE_ARG_RE: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"\$[({]([A-Z_][A-Z0-9_]*)[)}]").unwrap()
+);
 
 /// Makefile runner for GNU Make
 pub struct MakefileRunner {
@@ -73,25 +90,12 @@ impl MakefileRunner {
         let mut tasks = Vec::new();
         let mut seen_targets: HashSet<String> = HashSet::new();
 
-        // Regex for target lines: "target:" or "target: deps"
-        // Excludes pattern rules (%), variables ($), and special targets (.PHONY)
-        // Note: We'll filter out := assignments separately since regex crate doesn't support lookahead
-        let target_re =
-            Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").expect("Invalid target regex");
-
-        // Regex for comment descriptions: "## description" or "# target: description"
-        let comment_desc_re =
-            Regex::new(r"^##\s*(.+)$|^#\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.+)$")
-                .expect("Invalid comment regex");
-
-        // Regex for argument detection in commands: $(VAR) or ${VAR}
-        let arg_re = Regex::new(r"\$[({]([A-Z_][A-Z0-9_]*)[)}]").expect("Invalid arg regex");
-
+        // Using static regexes for performance (compiled once at first use)
         let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
 
         for (i, line) in lines.iter().enumerate() {
             // Check if this line defines a target
-            if let Some(caps) = target_re.captures(line) {
+            if let Some(caps) = TARGET_RE.captures(line) {
                 let target_name = caps[1].to_string();
 
                 // Skip variable assignments (VAR :=, VAR ?=, VAR +=, VAR =)
@@ -128,13 +132,13 @@ impl MakefileRunner {
 
                 // Look for description in the previous line(s)
                 let description = if i > 0 {
-                    self.extract_description(&lines[..i], &target_name, &comment_desc_re)
+                    self.extract_description(&lines[..i], &target_name)
                 } else {
                     None
                 };
 
                 // Look for arguments in the target's recipe
-                let arguments = self.extract_make_args(&lines, i, &arg_re);
+                let arguments = self.extract_make_args(&lines, i);
 
                 tasks.push(TaskInfo {
                     name: target_name,
@@ -155,11 +159,10 @@ impl MakefileRunner {
         &self,
         lines_before: &[String],
         target_name: &str,
-        comment_re: &Regex,
     ) -> Option<String> {
         // Look at the line immediately before the target
         if let Some(prev_line) = lines_before.last() {
-            if let Some(caps) = comment_re.captures(prev_line) {
+            if let Some(caps) = COMMENT_DESC_RE.captures(prev_line) {
                 // Check for "## description" format
                 if let Some(desc) = caps.get(1) {
                     return Some(desc.as_str().trim().to_string());
@@ -182,7 +185,6 @@ impl MakefileRunner {
         &self,
         lines: &[String],
         target_line: usize,
-        arg_re: &Regex,
     ) -> Vec<TaskArg> {
         let mut args: HashSet<String> = HashSet::new();
 
@@ -193,8 +195,8 @@ impl MakefileRunner {
                 break;
             }
 
-            // Find variable references
-            for caps in arg_re.captures_iter(line) {
+            // Find variable references (using static regex)
+            for caps in MAKE_ARG_RE.captures_iter(line) {
                 let var_name = caps[1].to_string();
                 // Skip common built-in variables
                 if !is_builtin_make_var(&var_name) {
@@ -236,16 +238,14 @@ impl MakefileRunner {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut targets: HashSet<String> = HashSet::new();
 
-        let target_re =
-            Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").expect("Invalid target regex");
-
+        // Using static regex for performance (compiled once at first use)
         for line in stdout.lines() {
             // Skip lines that are not target definitions
             if line.starts_with('#') || line.starts_with('\t') || line.is_empty() {
                 continue;
             }
 
-            if let Some(caps) = target_re.captures(line) {
+            if let Some(caps) = TARGET_RE.captures(line) {
                 let target = caps[1].to_string();
                 // Skip special targets
                 if !target.starts_with('.') {

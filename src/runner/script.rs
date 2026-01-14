@@ -17,10 +17,36 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::traits::{RunOptions, RunResult, Runner, RunnerResult, TaskInfo};
 use crate::error::{suggest_fix, TaskError};
+
+// Static regex patterns - compiled once at first use
+/// Matches "Commands:" or "Command:" section headers (case-insensitive)
+static CMD_SECTION_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)commands?:").unwrap());
+
+/// Matches command lines in help output: "  name    description"
+static CMD_LINE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\s{2,4}([a-zA-Z_][a-zA-Z0-9_-]*)\s+(.*)$").unwrap());
+
+/// Alternative command line format: "  name - description" or "  name : description"
+static ALT_CMD_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\s{2,4}([a-zA-Z_][a-zA-Z0-9_-]*)\s+[-:]?\s*(.*)$").unwrap());
+
+/// Matches case statement patterns: "  name)" or "  'name')" or "  \"name\")"
+static CASE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^\s*["']?([a-zA-Z_][a-zA-Z0-9_-]*)["']?\s*\)"#).unwrap());
+
+/// Matches function definitions: "name() {" or "function name()"
+static FUNC_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^(?:function\s+)?([a-zA-Z_][a-zA-Z0-9_-]*)\s*\(\s*\)"#).unwrap());
+
+/// Matches comment lines: "# description" (with optional leading whitespace)
+static SCRIPT_COMMENT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\s*#\s*(.*)$").unwrap());
 
 /// Script runner for custom shell scripts
 pub struct ScriptRunner {
@@ -121,14 +147,10 @@ impl ScriptRunner {
         let mut tasks = Vec::new();
 
         // Pattern 1: Look for "Commands:" section
-        let cmd_section_re = Regex::new(r"(?i)commands?:").expect("Invalid commands regex");
-        let cmd_line_re = Regex::new(
-            r"^\s{2,4}([a-zA-Z_][a-zA-Z0-9_-]*)\s+(.*)$"
-        ).expect("Invalid command line regex");
-
+        // Using static regexes for performance (compiled once at first use)
         let mut in_commands_section = false;
         for line in output.lines() {
-            if cmd_section_re.is_match(line) {
+            if CMD_SECTION_RE.is_match(line) {
                 in_commands_section = true;
                 continue;
             }
@@ -140,7 +162,7 @@ impl ScriptRunner {
                     continue;
                 }
 
-                if let Some(caps) = cmd_line_re.captures(line) {
+                if let Some(caps) = CMD_LINE_RE.captures(line) {
                     let name = caps[1].to_string();
                     let desc = caps.get(2).map(|m| m.as_str().trim().to_string());
 
@@ -160,17 +182,13 @@ impl ScriptRunner {
         // Pattern 2: Look for individual command descriptions
         // Format: "  command - description" or "  command    description"
         if tasks.is_empty() {
-            let alt_cmd_re = Regex::new(
-                r"^\s{2,4}([a-zA-Z_][a-zA-Z0-9_-]*)\s+[-:]?\s*(.*)$"
-            ).expect("Invalid alt command regex");
-
             for line in output.lines() {
                 // Skip lines that look like options (start with -)
                 if line.trim().starts_with('-') {
                     continue;
                 }
 
-                if let Some(caps) = alt_cmd_re.captures(line) {
+                if let Some(caps) = ALT_CMD_RE.captures(line) {
                     let name = caps[1].to_string();
                     // Skip if name looks like an option or common word
                     if is_common_word(&name) {
@@ -211,22 +229,12 @@ impl ScriptRunner {
 
         let mut tasks = Vec::new();
 
-        // Regex for case patterns: "  command)" or "  command|other)"
-        let case_re = Regex::new(r#"^\s*["']?([a-zA-Z_][a-zA-Z0-9_-]*)["']?\s*\)"#)
-            .expect("Invalid case regex");
-
-        // Regex for function definitions: "command() {" or "function command"
-        let func_re = Regex::new(r#"^(?:function\s+)?([a-zA-Z_][a-zA-Z0-9_-]*)\s*\(\s*\)"#)
-            .expect("Invalid func regex");
-
-        // Regex for comment above command (allows leading whitespace)
-        let comment_re = Regex::new(r"^\s*#\s*(.*)$").expect("Invalid comment regex");
-
+        // Using static regexes for performance (compiled once at first use)
         let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
 
         for (i, line) in lines.iter().enumerate() {
             // Try case pattern match
-            if let Some(caps) = case_re.captures(line) {
+            if let Some(caps) = CASE_RE.captures(line) {
                 let name = caps[1].to_string();
 
                 // Skip special case patterns
@@ -236,7 +244,7 @@ impl ScriptRunner {
 
                 // Look for comment in previous line
                 let description = if i > 0 {
-                    comment_re.captures(&lines[i - 1])
+                    SCRIPT_COMMENT_RE.captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {
@@ -253,7 +261,7 @@ impl ScriptRunner {
             }
 
             // Try function definition match
-            if let Some(caps) = func_re.captures(line) {
+            if let Some(caps) = FUNC_RE.captures(line) {
                 let name = caps[1].to_string();
 
                 // Skip common internal function names
@@ -262,7 +270,7 @@ impl ScriptRunner {
                 }
 
                 let description = if i > 0 {
-                    comment_re.captures(&lines[i - 1])
+                    SCRIPT_COMMENT_RE.captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {
@@ -872,5 +880,58 @@ esac
         assert!(names.contains(&"test"));
         assert!(names.contains(&"up"));
         assert!(names.contains(&"down"));
+    }
+
+    // TDD: Tests for static regex patterns (Step 2+3 of v0.1.0 cleanup)
+    #[test]
+    fn test_cmd_section_regex_matches() {
+        assert!(CMD_SECTION_RE.is_match("Commands:"));
+        assert!(CMD_SECTION_RE.is_match("commands:"));
+        assert!(CMD_SECTION_RE.is_match("COMMANDS:"));
+        assert!(CMD_SECTION_RE.is_match("Command:"));
+        assert!(!CMD_SECTION_RE.is_match("Options:"));
+    }
+
+    #[test]
+    fn test_cmd_line_regex_matches() {
+        assert!(CMD_LINE_RE.is_match("  build    Build the project"));
+        assert!(CMD_LINE_RE.is_match("    test   Run tests"));
+        assert!(CMD_LINE_RE.captures("  deploy   Deploy to prod").is_some());
+
+        let caps = CMD_LINE_RE.captures("  build    Build the project").unwrap();
+        assert_eq!(&caps[1], "build");
+    }
+
+    #[test]
+    fn test_case_regex_matches() {
+        assert!(CASE_RE.is_match("  build)"));
+        assert!(CASE_RE.is_match("    test)"));
+        assert!(CASE_RE.is_match(r#"  "deploy")"#));
+        assert!(CASE_RE.is_match("  'start')"));
+        assert!(!CASE_RE.is_match("  *)"));  // Wildcard shouldn't match
+
+        let caps = CASE_RE.captures("  build)").unwrap();
+        assert_eq!(&caps[1], "build");
+    }
+
+    #[test]
+    fn test_func_regex_matches() {
+        assert!(FUNC_RE.is_match("build() {"));
+        assert!(FUNC_RE.is_match("function test()"));
+        assert!(FUNC_RE.is_match("deploy ()"));
+        // Note: _private matches regex, but is_internal_function() filters it later
+        assert!(FUNC_RE.is_match("_private() {"));
+
+        let caps = FUNC_RE.captures("build() {").unwrap();
+        assert_eq!(&caps[1], "build");
+    }
+
+    #[test]
+    fn test_comment_regex_matches() {
+        assert!(SCRIPT_COMMENT_RE.is_match("# Build the project"));
+        assert!(SCRIPT_COMMENT_RE.is_match("  # Indented comment"));
+
+        let caps = SCRIPT_COMMENT_RE.captures("# Build the project").unwrap();
+        assert_eq!(&caps[1], "Build the project");
     }
 }

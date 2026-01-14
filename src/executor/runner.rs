@@ -256,16 +256,23 @@ async fn wait_for_output(
 }
 
 /// Read from an async reader and truncate if too large
+///
+/// Optimized for memory efficiency:
+/// - Pre-allocates output buffer to avoid repeated reallocations
+/// - Reuses line buffer across iterations instead of allocating new String each time
 async fn read_and_truncate<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
     max_size: usize,
 ) -> (String, bool) {
     let mut buf_reader = BufReader::new(reader);
-    let mut output = String::new();
+    // Pre-allocate output buffer (cap at 64KB to avoid over-allocation for small max_size)
+    let mut output = String::with_capacity(max_size.min(64 * 1024));
+    // Reuse line buffer across iterations (typical line is ~80 chars, allow some margin)
+    let mut line = String::with_capacity(4096);
     let mut truncated = false;
 
     loop {
-        let mut line = String::new();
+        line.clear(); // Reuse buffer instead of allocating new String
         match buf_reader.read_line(&mut line).await {
             Ok(0) => break, // EOF
             Ok(_) => {
@@ -718,6 +725,58 @@ mod tests {
                 assert!(suggestion.is_some());
             }
             _ => panic!("Expected CommandFailed error"),
+        }
+    }
+
+    // TDD: Tests for memory allocation optimization (Step 4 of v0.1.0 cleanup)
+    #[tokio::test]
+    async fn test_read_and_truncate_large_output() {
+        // Test that large output is properly truncated
+        let options = ExecOptions::default().with_max_output(500);
+
+        // Generate 1000 lines of output - should be truncated
+        let result = exec_command(
+            "sh",
+            &["-c", "for i in $(seq 1 1000); do echo 'line $i'; done"],
+            &options,
+        )
+        .await;
+
+        match result {
+            Ok(res) => {
+                assert!(res.stdout_truncated, "Output should be truncated");
+                assert!(res.stdout.contains("[output truncated]"));
+                // Should be close to max_size
+                assert!(
+                    res.stdout.len() <= 600,
+                    "Output too large: {} bytes",
+                    res.stdout.len()
+                );
+            }
+            Err(TaskError::SpawnFailed { .. }) => {
+                eprintln!("Skipping test: sh not available");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_and_truncate_small_output() {
+        // Small output should not be truncated
+        let options = ExecOptions::default().with_max_output(10000);
+
+        let result = exec_command("echo", &["hello world"], &options).await;
+
+        match result {
+            Ok(res) => {
+                assert!(!res.stdout_truncated, "Small output should not be truncated");
+                assert!(!res.stdout.contains("[output truncated]"));
+                assert!(res.stdout.contains("hello world"));
+            }
+            Err(TaskError::SpawnFailed { .. }) => {
+                eprintln!("Skipping test: echo not available");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
         }
     }
 }
