@@ -235,7 +235,7 @@ impl ScriptRunner {
         let mut tasks = Vec::new();
 
         // Using static regexes for performance (compiled once at first use)
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
         for (i, line) in lines.iter().enumerate() {
             // Try case pattern match

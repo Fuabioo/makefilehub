@@ -237,7 +237,7 @@ async fn wait_for_output(
     });
 
     // Wait for process to complete
-    let status = child.wait().await.map_err(|e| TaskError::Io(e))?;
+    let status = child.wait().await.map_err(TaskError::Io)?;
 
     // Get output results
     let (stdout, stdout_truncated) = stdout_handle

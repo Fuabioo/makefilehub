@@ -255,7 +255,7 @@ fn detect_build_system(args: DetectArgs, config_path: Option<&str>) -> Result<()
             if let Some(ref detected) = detection.detected {
                 println!("{}: {}", "Detected".green(), detected);
             } else {
-                println!("{}: {}", "Detected".yellow(), "None");
+                println!("{}: None", "Detected".yellow());
             }
 
             println!();
@@ -273,18 +273,14 @@ fn detect_build_system(args: DetectArgs, config_path: Option<&str>) -> Result<()
             if detection.files_found.makefile {
                 let path = detection
                     .files_found
-                    .makefile_path
-                    .as_ref()
-                    .map(|p| p.as_str())
+                    .makefile_path.as_deref()
                     .unwrap_or("Makefile");
                 println!("  - {}", path);
             }
             if detection.files_found.justfile {
                 let path = detection
                     .files_found
-                    .justfile_path
-                    .as_ref()
-                    .map(|p| p.as_str())
+                    .justfile_path.as_deref()
                     .unwrap_or("justfile");
                 println!("  - {}", path);
             }

@@ -81,14 +81,14 @@ impl MakefileRunner {
     /// Extracts targets and their descriptions from comments.
     /// Format: `# target: description` followed by `target:`
     fn parse_makefile(&self, makefile_path: &Path) -> RunnerResult<Vec<TaskInfo>> {
-        let file = std::fs::File::open(makefile_path).map_err(|e| TaskError::Io(e))?;
+        let file = std::fs::File::open(makefile_path).map_err(TaskError::Io)?;
 
         let reader = BufReader::new(file);
         let mut tasks = Vec::new();
         let mut seen_targets: HashSet<String> = HashSet::new();
 
         // Using static regexes for performance (compiled once at first use)
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
         for (i, line) in lines.iter().enumerate() {
             // Check if this line defines a target

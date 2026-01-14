@@ -371,7 +371,7 @@ struct ToolError {
 }
 
 impl ToolError {
-    fn new(error: impl std::fmt::Display, suggestion: Option<String>) -> String {
+    fn format(error: impl std::fmt::Display, suggestion: Option<String>) -> String {
         serde_json::to_string_pretty(&ToolError {
             success: false,
             error: error.to_string(),
@@ -397,7 +397,7 @@ impl MakefilehubServer {
         let project_path = match self.resolve_project_path(params.project.as_deref(), &config) {
             Ok(p) => p,
             Err(e) => {
-                return ToolError::new(
+                return ToolError::format(
                     &e,
                     Some("Check project path or configure in services".into()),
                 )
@@ -407,7 +407,7 @@ impl MakefilehubServer {
         let runner = match self.get_runner(&project_path, params.runner.as_deref(), &config) {
             Ok(r) => r,
             Err(e) => {
-                return ToolError::new(
+                return ToolError::format(
                     &e,
                     Some("Ensure Makefile, justfile, or run.sh exists".into()),
                 )
@@ -423,7 +423,7 @@ impl MakefilehubServer {
 
         let result = match runner.run_task(&project_path, &params.task, &options) {
             Ok(r) => r,
-            Err(e) => return ToolError::new(&e, None),
+            Err(e) => return ToolError::format(&e, None),
         };
 
         let response = RunTaskResponse {
@@ -450,7 +450,7 @@ impl MakefilehubServer {
         };
 
         serde_json::to_string_pretty(&response)
-            .unwrap_or_else(|e| ToolError::new(format!("Serialization error: {}", e), None))
+            .unwrap_or_else(|e| ToolError::format(format!("Serialization error: {}", e), None))
     }
 
     /// List available tasks/targets in a project
@@ -463,7 +463,7 @@ impl MakefilehubServer {
         let project_path = match self.resolve_project_path(params.project.as_deref(), &config) {
             Ok(p) => p,
             Err(e) => {
-                return ToolError::new(
+                return ToolError::format(
                     &e,
                     Some("Check project path or configure in services".into()),
                 )
@@ -473,7 +473,7 @@ impl MakefilehubServer {
         let runner = match self.get_runner(&project_path, params.runner.as_deref(), &config) {
             Ok(r) => r,
             Err(e) => {
-                return ToolError::new(
+                return ToolError::format(
                     &e,
                     Some("Ensure Makefile, justfile, or run.sh exists".into()),
                 )
@@ -482,7 +482,7 @@ impl MakefilehubServer {
 
         let tasks = match runner.list_tasks(&project_path) {
             Ok(t) => t,
-            Err(e) => return ToolError::new(&e, None),
+            Err(e) => return ToolError::format(&e, None),
         };
 
         // Determine the build file name
@@ -513,7 +513,7 @@ impl MakefilehubServer {
         };
 
         serde_json::to_string_pretty(&response)
-            .unwrap_or_else(|e| ToolError::new(format!("Serialization error: {}", e), None))
+            .unwrap_or_else(|e| ToolError::format(format!("Serialization error: {}", e), None))
     }
 
     /// Detect which build system a project uses
@@ -525,7 +525,7 @@ impl MakefilehubServer {
 
         let project_path = match self.resolve_project_path(params.project.as_deref(), &config) {
             Ok(p) => p,
-            Err(e) => return ToolError::new(&e, Some("Check project path".into())),
+            Err(e) => return ToolError::format(&e, Some("Check project path".into())),
         };
 
         let detection = detect_runner(&project_path, &config);
@@ -543,7 +543,7 @@ impl MakefilehubServer {
         };
 
         serde_json::to_string_pretty(&response)
-            .unwrap_or_else(|e| ToolError::new(format!("Serialization error: {}", e), None))
+            .unwrap_or_else(|e| ToolError::format(format!("Serialization error: {}", e), None))
     }
 
     /// Get resolved configuration for a project
@@ -556,7 +556,7 @@ impl MakefilehubServer {
         let project_path = match self.resolve_project_path(Some(&params.project), &config) {
             Ok(p) => p,
             Err(e) => {
-                return ToolError::new(
+                return ToolError::format(
                     &e,
                     Some("Check project path or configure in services".into()),
                 )
@@ -593,7 +593,7 @@ impl MakefilehubServer {
         };
 
         serde_json::to_string_pretty(&response)
-            .unwrap_or_else(|e| ToolError::new(format!("Serialization error: {}", e), None))
+            .unwrap_or_else(|e| ToolError::format(format!("Serialization error: {}", e), None))
     }
 
     /// Rebuild a service and handle dependencies
@@ -825,7 +825,7 @@ impl MakefilehubServer {
         };
 
         serde_json::to_string_pretty(&response)
-            .unwrap_or_else(|e| ToolError::new(format!("Serialization error: {}", e), None))
+            .unwrap_or_else(|e| ToolError::format(format!("Serialization error: {}", e), None))
     }
 }
 
@@ -979,7 +979,7 @@ mod tests {
 
     #[test]
     fn test_tool_error_format() {
-        let error = ToolError::new("Something went wrong", Some("Try this fix".into()));
+        let error = ToolError::format("Something went wrong", Some("Try this fix".into()));
         let parsed: serde_json::Value = serde_json::from_str(&error).unwrap();
 
         assert_eq!(parsed["success"], false);

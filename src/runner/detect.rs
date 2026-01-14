@@ -72,6 +72,7 @@ pub struct FilesFound {
 
 /// Result of build system detection
 #[derive(Debug, Clone, Serialize)]
+#[derive(Default)]
 pub struct DetectionResult {
     /// The detected runner (first match by priority)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,15 +83,6 @@ pub struct DetectionResult {
     pub files_found: FilesFound,
 }
 
-impl Default for DetectionResult {
-    fn default() -> Self {
-        Self {
-            detected: None,
-            available: Vec::new(),
-            files_found: FilesFound::default(),
-        }
-    }
-}
 
 /// Detect which build system a project uses
 ///
