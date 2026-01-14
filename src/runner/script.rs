@@ -25,8 +25,7 @@ use crate::error::{suggest_fix, TaskError};
 
 // Static regex patterns - compiled once at first use
 /// Matches "Commands:" or "Command:" section headers (case-insensitive)
-static CMD_SECTION_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)commands?:").unwrap());
+static CMD_SECTION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)commands?:").unwrap());
 
 /// Matches command lines in help output: "  name    description"
 static CMD_LINE_RE: Lazy<Regex> =
@@ -45,8 +44,7 @@ static FUNC_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^(?:function\s+)?([a-zA-Z_][a-zA-Z0-9_-]*)\s*\(\s*\)"#).unwrap());
 
 /// Matches comment lines: "# description" (with optional leading whitespace)
-static SCRIPT_COMMENT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*#\s*(.*)$").unwrap());
+static SCRIPT_COMMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*#\s*(.*)$").unwrap());
 
 /// Script runner for custom shell scripts
 pub struct ScriptRunner {
@@ -87,7 +85,10 @@ impl ScriptRunner {
     /// Checks the configured script and returns the path if it exists and is executable.
     pub fn find_script(&self, dir: &Path) -> Option<std::path::PathBuf> {
         // Handle both ./run.sh and run.sh formats
-        let script_name = self.script_name.strip_prefix("./").unwrap_or(&self.script_name);
+        let script_name = self
+            .script_name
+            .strip_prefix("./")
+            .unwrap_or(&self.script_name);
         let path = dir.join(script_name);
 
         if !path.exists() || !path.is_file() {
@@ -112,10 +113,12 @@ impl ScriptRunner {
 
     /// Try to list commands by running script with --help
     fn list_via_help(&self, dir: &Path) -> RunnerResult<Vec<TaskInfo>> {
-        let script_path = self.find_script(dir).ok_or_else(|| TaskError::NoRunnerDetected {
-            path: dir.display().to_string(),
-            available: vec![],
-        })?;
+        let script_path = self
+            .find_script(dir)
+            .ok_or_else(|| TaskError::NoRunnerDetected {
+                path: dir.display().to_string(),
+                available: vec![],
+            })?;
 
         let output = Command::new(&self.shell)
             .current_dir(dir)
@@ -219,10 +222,12 @@ impl ScriptRunner {
 
     /// Parse script directly for case statement commands
     fn list_via_parse(&self, dir: &Path) -> RunnerResult<Vec<TaskInfo>> {
-        let script_path = self.find_script(dir).ok_or_else(|| TaskError::NoRunnerDetected {
-            path: dir.display().to_string(),
-            available: vec![],
-        })?;
+        let script_path = self
+            .find_script(dir)
+            .ok_or_else(|| TaskError::NoRunnerDetected {
+                path: dir.display().to_string(),
+                available: vec![],
+            })?;
 
         let file = std::fs::File::open(&script_path).map_err(TaskError::Io)?;
         let reader = BufReader::new(file);
@@ -244,7 +249,8 @@ impl ScriptRunner {
 
                 // Look for comment in previous line
                 let description = if i > 0 {
-                    SCRIPT_COMMENT_RE.captures(&lines[i - 1])
+                    SCRIPT_COMMENT_RE
+                        .captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {
@@ -270,7 +276,8 @@ impl ScriptRunner {
                 }
 
                 let description = if i > 0 {
-                    SCRIPT_COMMENT_RE.captures(&lines[i - 1])
+                    SCRIPT_COMMENT_RE
+                        .captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {
@@ -298,10 +305,12 @@ impl ScriptRunner {
         task: &str,
         options: &RunOptions,
     ) -> RunnerResult<RunResult> {
-        let script_path = self.find_script(dir).ok_or_else(|| TaskError::NoRunnerDetected {
-            path: dir.display().to_string(),
-            available: vec![],
-        })?;
+        let script_path = self
+            .find_script(dir)
+            .ok_or_else(|| TaskError::NoRunnerDetected {
+                path: dir.display().to_string(),
+                available: vec![],
+            })?;
 
         let start = Instant::now();
 
@@ -444,10 +453,24 @@ impl Runner for ScriptRunner {
 fn is_common_word(word: &str) -> bool {
     matches!(
         word.to_lowercase().as_str(),
-        "the" | "and" | "for" | "with" | "from" | "into"
-            | "usage" | "options" | "arguments" | "description"
-            | "example" | "examples" | "note" | "notes"
-            | "see" | "also" | "more" | "info"
+        "the"
+            | "and"
+            | "for"
+            | "with"
+            | "from"
+            | "into"
+            | "usage"
+            | "options"
+            | "arguments"
+            | "description"
+            | "example"
+            | "examples"
+            | "note"
+            | "notes"
+            | "see"
+            | "also"
+            | "more"
+            | "info"
     )
 }
 
@@ -456,9 +479,21 @@ fn is_internal_function(name: &str) -> bool {
     name.starts_with('_')
         || matches!(
             name,
-            "main" | "usage" | "help" | "error" | "log" | "debug"
-                | "info" | "warn" | "die" | "abort" | "exit"
-                | "cleanup" | "setup" | "init" | "check"
+            "main"
+                | "usage"
+                | "help"
+                | "error"
+                | "log"
+                | "debug"
+                | "info"
+                | "warn"
+                | "die"
+                | "abort"
+                | "exit"
+                | "cleanup"
+                | "setup"
+                | "init"
+                | "check"
         )
 }
 
@@ -898,7 +933,9 @@ esac
         assert!(CMD_LINE_RE.is_match("    test   Run tests"));
         assert!(CMD_LINE_RE.captures("  deploy   Deploy to prod").is_some());
 
-        let caps = CMD_LINE_RE.captures("  build    Build the project").unwrap();
+        let caps = CMD_LINE_RE
+            .captures("  build    Build the project")
+            .unwrap();
         assert_eq!(&caps[1], "build");
     }
 
@@ -908,7 +945,7 @@ esac
         assert!(CASE_RE.is_match("    test)"));
         assert!(CASE_RE.is_match(r#"  "deploy")"#));
         assert!(CASE_RE.is_match("  'start')"));
-        assert!(!CASE_RE.is_match("  *)"));  // Wildcard shouldn't match
+        assert!(!CASE_RE.is_match("  *)")); // Wildcard shouldn't match
 
         let caps = CASE_RE.captures("  build)").unwrap();
         assert_eq!(&caps[1], "build");

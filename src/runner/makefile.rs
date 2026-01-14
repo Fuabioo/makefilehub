@@ -25,19 +25,16 @@ use crate::error::{suggest_fix, TaskError};
 
 // Static regex patterns - compiled once at first use
 /// Matches Makefile target definitions: "name:"
-static TARGET_RE: Lazy<Regex> = Lazy::new(||
-    Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").unwrap()
-);
+static TARGET_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").unwrap());
 
 /// Matches comment descriptions: "## description" or "# target: description"
-static COMMENT_DESC_RE: Lazy<Regex> = Lazy::new(||
-    Regex::new(r"^##\s*(.+)$|^#\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.+)$").unwrap()
-);
+static COMMENT_DESC_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^##\s*(.+)$|^#\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.+)$").unwrap());
 
 /// Matches Make variable references: $(VAR) or ${VAR}
-static MAKE_ARG_RE: Lazy<Regex> = Lazy::new(||
-    Regex::new(r"\$[({]([A-Z_][A-Z0-9_]*)[)}]").unwrap()
-);
+static MAKE_ARG_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\$[({]([A-Z_][A-Z0-9_]*)[)}]").unwrap());
 
 /// Makefile runner for GNU Make
 pub struct MakefileRunner {
@@ -155,11 +152,7 @@ impl MakefileRunner {
     }
 
     /// Extract description from comments above a target
-    fn extract_description(
-        &self,
-        lines_before: &[String],
-        target_name: &str,
-    ) -> Option<String> {
+    fn extract_description(&self, lines_before: &[String], target_name: &str) -> Option<String> {
         // Look at the line immediately before the target
         if let Some(prev_line) = lines_before.last() {
             if let Some(caps) = COMMENT_DESC_RE.captures(prev_line) {
@@ -181,11 +174,7 @@ impl MakefileRunner {
     }
 
     /// Extract arguments from a target's recipe (variable references)
-    fn extract_make_args(
-        &self,
-        lines: &[String],
-        target_line: usize,
-    ) -> Vec<TaskArg> {
+    fn extract_make_args(&self, lines: &[String], target_line: usize) -> Vec<TaskArg> {
         let mut args: HashSet<String> = HashSet::new();
 
         // Look at lines following the target (recipe lines start with tab)
@@ -521,7 +510,10 @@ test:
         let tasks = runner.list_tasks(dir.path()).unwrap();
 
         let build_task = tasks.iter().find(|t| t.name == "build").unwrap();
-        assert_eq!(build_task.description, Some("Build the project".to_string()));
+        assert_eq!(
+            build_task.description,
+            Some("Build the project".to_string())
+        );
 
         let test_task = tasks.iter().find(|t| t.name == "test").unwrap();
         assert_eq!(test_task.description, Some("Run all tests".to_string()));
@@ -620,7 +612,9 @@ build:
     fn test_build_command_with_args() {
         let runner = MakefileRunner::new();
         let mut options = RunOptions::default();
-        options.args.insert("TARGET".to_string(), "release".to_string());
+        options
+            .args
+            .insert("TARGET".to_string(), "release".to_string());
         options.args.insert("VERBOSE".to_string(), "1".to_string());
 
         let cmd = runner.build_command("build", &options);

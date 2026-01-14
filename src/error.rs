@@ -186,19 +186,28 @@ pub fn suggest_fix(command: &str, stderr: &str) -> Option<String> {
     // Docker-related errors
     if stderr.contains("docker") || stderr.contains("Docker") {
         if stderr.contains("not running") || stderr.contains("Cannot connect") {
-            return Some("Docker daemon is not running. Start Docker Desktop or the Docker service.".to_string());
+            return Some(
+                "Docker daemon is not running. Start Docker Desktop or the Docker service."
+                    .to_string(),
+            );
         }
         if stderr.contains("No such container") {
-            return Some("Container not found. Try running 'up' first to start the services.".to_string());
+            return Some(
+                "Container not found. Try running 'up' first to start the services.".to_string(),
+            );
         }
         if stderr.contains("port is already allocated") {
-            return Some("Port conflict. Stop the conflicting service or use a different port.".to_string());
+            return Some(
+                "Port conflict. Stop the conflicting service or use a different port.".to_string(),
+            );
         }
     }
 
     // Permission errors
     if stderr.contains("Permission denied") {
-        return Some("Permission denied. Check file permissions or run with appropriate access.".to_string());
+        return Some(
+            "Permission denied. Check file permissions or run with appropriate access.".to_string(),
+        );
     }
 
     // Command not found
@@ -222,12 +231,16 @@ pub fn suggest_fix(command: &str, stderr: &str) -> Option<String> {
 
     // Make-specific errors
     if stderr.contains("No rule to make target") {
-        return Some("Target not found in Makefile. Run 'list_tasks' to see available targets.".to_string());
+        return Some(
+            "Target not found in Makefile. Run 'list_tasks' to see available targets.".to_string(),
+        );
     }
 
     // Just-specific errors
     if stderr.contains("Justfile does not contain recipe") {
-        return Some("Recipe not found in justfile. Run 'list_tasks' to see available recipes.".to_string());
+        return Some(
+            "Recipe not found in justfile. Run 'list_tasks' to see available recipes.".to_string(),
+        );
     }
 
     None

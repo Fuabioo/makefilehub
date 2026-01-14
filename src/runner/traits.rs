@@ -134,7 +134,11 @@ pub struct RunResult {
 
 impl RunResult {
     /// Create a successful result
-    pub fn success(command: impl Into<String>, stdout: impl Into<String>, duration_ms: u64) -> Self {
+    pub fn success(
+        command: impl Into<String>,
+        stdout: impl Into<String>,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             success: true,
             exit_code: Some(0),

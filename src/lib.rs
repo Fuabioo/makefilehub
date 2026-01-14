@@ -31,6 +31,11 @@ pub mod runner;
 pub use cli::{Cli, Commands};
 pub use config::Config;
 pub use error::{ErrorInfo, TaskError};
-pub use executor::{exec_command, exec_command_sync, exec_shell_command, ExecOptions, ExecResult, TaskExecutor};
+pub use executor::{
+    exec_command, exec_command_sync, exec_shell_command, ExecOptions, ExecResult, TaskExecutor,
+};
 pub use mcp::MakefilehubServer;
-pub use runner::{detect_runner, DetectionResult, FilesFound, JustfileRunner, MakefileRunner, RunnerType, ScriptRunner};
+pub use runner::{
+    detect_runner, DetectionResult, FilesFound, JustfileRunner, MakefileRunner, RunnerType,
+    ScriptRunner,
+};

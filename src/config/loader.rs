@@ -88,10 +88,7 @@ pub fn load_config(override_path: Option<&str>) -> Result<Config> {
 
 /// Find all existing config files (for debugging/introspection)
 pub fn find_config_files() -> Vec<PathBuf> {
-    config_paths()
-        .into_iter()
-        .filter(|p| p.exists())
-        .collect()
+    config_paths().into_iter().filter(|p| p.exists()).collect()
 }
 
 /// Get the default config directory for writing new configs
@@ -121,7 +118,11 @@ mod tests {
         assert!(paths[0].to_string_lossy().contains("/etc/"));
 
         // Last should be current directory
-        assert!(paths.last().unwrap().to_string_lossy().contains(".makefilehub.toml"));
+        assert!(paths
+            .last()
+            .unwrap()
+            .to_string_lossy()
+            .contains(".makefilehub.toml"));
     }
 
     #[test]

@@ -29,24 +29,21 @@ use crate::error::{suggest_fix, TaskError};
 
 // Static regex patterns - compiled once at first use
 /// Matches recipe lines from `just --list` output: "    name args # description"
-static LIST_RECIPE_RE: Lazy<Regex> = Lazy::new(||
+static LIST_RECIPE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s{4}([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^#]*?)(?:\s*#\s*(.*))?$").unwrap()
-);
+});
 
 /// Matches recipe arguments: name, +name (variadic), *name (variadic zero-or-more)
-static ARG_RE: Lazy<Regex> = Lazy::new(||
+static ARG_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"([+*]?)([a-zA-Z_][a-zA-Z0-9_-]*)(?:=['"]?([^'"]*)?['"]?)?"#).unwrap()
-);
+});
 
 /// Matches recipe definition in justfile: "name args:" or "@name args:"
-static FILE_RECIPE_RE: Lazy<Regex> = Lazy::new(||
-    Regex::new(r"^@?([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^:]*?):\s*.*$").unwrap()
-);
+static FILE_RECIPE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^@?([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^:]*?):\s*.*$").unwrap());
 
 /// Matches doc comments before recipes: "# comment"
-static DOC_RE: Lazy<Regex> = Lazy::new(||
-    Regex::new(r"^#\s*(.*)$").unwrap()
-);
+static DOC_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#\s*(.*)$").unwrap());
 
 /// justfile runner
 pub struct JustfileRunner {
@@ -230,9 +227,8 @@ impl JustfileRunner {
             kind: String,
         }
 
-        let dump: JustDump = serde_json::from_str(json_str).map_err(|e| {
-            TaskError::Config(format!("Failed to parse just dump output: {}", e))
-        })?;
+        let dump: JustDump = serde_json::from_str(json_str)
+            .map_err(|e| TaskError::Config(format!("Failed to parse just dump output: {}", e)))?;
 
         let mut tasks: Vec<TaskInfo> = dump
             .recipes
@@ -296,7 +292,8 @@ impl JustfileRunner {
 
                 // Look for doc comment in previous line
                 let description = if i > 0 {
-                    DOC_RE.captures(&lines[i - 1])
+                    DOC_RE
+                        .captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {
