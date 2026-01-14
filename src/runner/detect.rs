@@ -71,8 +71,7 @@ pub struct FilesFound {
 }
 
 /// Result of build system detection
-#[derive(Debug, Clone, Serialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct DetectionResult {
     /// The detected runner (first match by priority)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,7 +81,6 @@ pub struct DetectionResult {
     /// Details about files found
     pub files_found: FilesFound,
 }
-
 
 /// Detect which build system a project uses
 ///

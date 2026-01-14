@@ -273,14 +273,16 @@ fn detect_build_system(args: DetectArgs, config_path: Option<&str>) -> Result<()
             if detection.files_found.makefile {
                 let path = detection
                     .files_found
-                    .makefile_path.as_deref()
+                    .makefile_path
+                    .as_deref()
                     .unwrap_or("Makefile");
                 println!("  - {}", path);
             }
             if detection.files_found.justfile {
                 let path = detection
                     .files_found
-                    .justfile_path.as_deref()
+                    .justfile_path
+                    .as_deref()
                     .unwrap_or("justfile");
                 println!("  - {}", path);
             }
