@@ -20,11 +20,30 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
 
 use super::traits::{RunOptions, RunResult, Runner, RunnerResult, TaskArg, TaskInfo};
 use crate::error::{suggest_fix, TaskError};
+
+// Static regex patterns - compiled once at first use
+/// Matches recipe lines from `just --list` output: "    name args # description"
+static LIST_RECIPE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^\s{4}([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^#]*?)(?:\s*#\s*(.*))?$").unwrap()
+});
+
+/// Matches recipe arguments: name, +name (variadic), *name (variadic zero-or-more)
+static ARG_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"([+*]?)([a-zA-Z_][a-zA-Z0-9_-]*)(?:=['"]?([^'"]*)?['"]?)?"#).unwrap()
+});
+
+/// Matches recipe definition in justfile: "name args:" or "@name args:"
+static FILE_RECIPE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^@?([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^:]*?):\s*.*$").unwrap());
+
+/// Matches doc comments before recipes: "# comment"
+static DOC_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#\s*(.*)$").unwrap());
 
 /// justfile runner
 pub struct JustfileRunner {
@@ -104,12 +123,7 @@ impl JustfileRunner {
     fn parse_list_output(&self, output: &str) -> RunnerResult<Vec<TaskInfo>> {
         let mut tasks = Vec::new();
 
-        // Regex for recipe lines: "    name args # description"
-        // or just "    name args" without description
-        let recipe_re = Regex::new(
-            r"^\s{4}([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^#]*?)(?:\s*#\s*(.*))?$",
-        )
-        .expect("Invalid recipe regex");
+        // Using static regexes for performance (compiled once at first use)
 
         for line in output.lines() {
             // Skip the "Available recipes:" header
@@ -117,7 +131,7 @@ impl JustfileRunner {
                 continue;
             }
 
-            if let Some(caps) = recipe_re.captures(line) {
+            if let Some(caps) = LIST_RECIPE_RE.captures(line) {
                 let name = caps[1].to_string();
                 let args_str = caps.get(2).map(|m| m.as_str().trim()).unwrap_or("");
                 let description = caps.get(3).map(|m| m.as_str().trim().to_string());
@@ -146,16 +160,8 @@ impl JustfileRunner {
 
         let mut args = Vec::new();
 
-        // Match argument patterns:
-        // - name (required)
-        // - name='default' or name="default" (optional with default)
-        // - +name (variadic)
-        // - *name (variadic, zero or more)
-        let arg_re = Regex::new(
-            r#"([+*]?)([a-zA-Z_][a-zA-Z0-9_-]*)(?:=['"]?([^'"]*)?['"]?)?"#
-        ).expect("Invalid arg regex");
-
-        for caps in arg_re.captures_iter(args_str) {
+        // Using static regex for performance (compiled once at first use)
+        for caps in ARG_RE.captures_iter(args_str) {
             let prefix = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             let name = caps[2].to_string();
             let default = caps.get(3).map(|m| m.as_str().to_string());
@@ -221,9 +227,8 @@ impl JustfileRunner {
             kind: String,
         }
 
-        let dump: JustDump = serde_json::from_str(json_str).map_err(|e| {
-            TaskError::Config(format!("Failed to parse just dump output: {}", e))
-        })?;
+        let dump: JustDump = serde_json::from_str(json_str)
+            .map_err(|e| TaskError::Config(format!("Failed to parse just dump output: {}", e)))?;
 
         let mut tasks: Vec<TaskInfo> = dump
             .recipes
@@ -270,18 +275,11 @@ impl JustfileRunner {
         let mut tasks = Vec::new();
         let mut seen_recipes: HashSet<String> = HashSet::new();
 
-        // Regex for recipe definition: "name args:" or "@name args:"
-        let recipe_re = Regex::new(
-            r"^@?([a-zA-Z_][a-zA-Z0-9_-]*)\s*([^:]*?):\s*.*$"
-        ).expect("Invalid recipe regex");
-
-        // Regex for doc comments: "# comment" before recipe
-        let doc_re = Regex::new(r"^#\s*(.*)$").expect("Invalid doc regex");
-
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        // Using static regexes for performance (compiled once at first use)
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
         for (i, line) in lines.iter().enumerate() {
-            if let Some(caps) = recipe_re.captures(line) {
+            if let Some(caps) = FILE_RECIPE_RE.captures(line) {
                 let name = caps[1].to_string();
 
                 if seen_recipes.contains(&name) {
@@ -294,7 +292,8 @@ impl JustfileRunner {
 
                 // Look for doc comment in previous line
                 let description = if i > 0 {
-                    doc_re.captures(&lines[i - 1])
+                    DOC_RE
+                        .captures(&lines[i - 1])
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().trim().to_string())
                 } else {

@@ -22,8 +22,7 @@ use crate::mcp::MakefilehubServer;
 /// * `Err(e)` - Server failed to start or encountered an error
 pub async fn run_mcp_server(config_path: Option<&str>) -> Result<()> {
     // Load configuration
-    let config = load_config(config_path)
-        .context("Failed to load configuration")?;
+    let config = load_config(config_path).context("Failed to load configuration")?;
 
     // Create server with loaded config
     let server = MakefilehubServer::with_config(config);

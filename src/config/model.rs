@@ -46,10 +46,7 @@ pub struct SecurityConfig {
 }
 
 fn default_allowed_paths() -> Vec<String> {
-    vec![
-        "$HOME".to_string(),
-        "/tmp".to_string(),
-    ]
+    vec!["$HOME".to_string(), "/tmp".to_string()]
 }
 
 impl Default for SecurityConfig {
@@ -280,13 +277,19 @@ impl Config {
         // If allow_any_path is enabled, skip validation (DANGEROUS)
         if self.security.allow_any_path {
             tracing::warn!("Path validation disabled - allow_any_path is enabled");
-            return path.canonicalize().map_err(|e| format!("Failed to canonicalize path: {}", e));
+            return path
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize path: {}", e));
         }
 
         // Canonicalize the requested path
-        let canonical = path
-            .canonicalize()
-            .map_err(|e| format!("Path '{}' does not exist or is not accessible: {}", path.display(), e))?;
+        let canonical = path.canonicalize().map_err(|e| {
+            format!(
+                "Path '{}' does not exist or is not accessible: {}",
+                path.display(),
+                e
+            )
+        })?;
 
         // Get expanded allowed paths
         let allowed = self.get_expanded_allowed_paths();
@@ -349,7 +352,9 @@ impl Config {
             runner: service.and_then(|s| s.runner.clone()),
             script: service.and_then(|s| s.script.clone()),
             depends_on: service.map(|s| s.depends_on.clone()).unwrap_or_default(),
-            force_recreate: service.map(|s| s.force_recreate.clone()).unwrap_or_default(),
+            force_recreate: service
+                .map(|s| s.force_recreate.clone())
+                .unwrap_or_default(),
             tasks: service.map(|s| s.tasks.clone()).unwrap_or_default(),
             env: service.map(|s| s.env.clone()).unwrap_or_default(),
             timeout: service
@@ -406,7 +411,10 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
 
-        assert_eq!(config.defaults.runner_priority, vec!["make", "just", "script"]);
+        assert_eq!(
+            config.defaults.runner_priority,
+            vec!["make", "just", "script"]
+        );
         assert_eq!(config.defaults.default_script, "./run.sh");
         assert_eq!(config.defaults.timeout, 300);
     }
@@ -417,7 +425,10 @@ mod tests {
 
         assert_eq!(config.runners.make.command, "make");
         assert_eq!(config.runners.just.command, "just");
-        assert_eq!(config.runners.script.scripts, vec!["./run.sh", "./build.sh", "./task.sh"]);
+        assert_eq!(
+            config.runners.script.scripts,
+            vec!["./run.sh", "./build.sh", "./task.sh"]
+        );
     }
 
     #[test]
@@ -430,7 +441,10 @@ mod tests {
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.defaults.timeout, 600);
         // Defaults should still apply
-        assert_eq!(config.defaults.runner_priority, vec!["make", "just", "script"]);
+        assert_eq!(
+            config.defaults.runner_priority,
+            vec!["make", "just", "script"]
+        );
     }
 
     #[test]
@@ -464,7 +478,10 @@ mod tests {
 
         let config: Config = toml::from_str(toml).unwrap();
 
-        assert_eq!(config.defaults.runner_priority, vec!["just", "make", "script"]);
+        assert_eq!(
+            config.defaults.runner_priority,
+            vec!["just", "make", "script"]
+        );
         assert_eq!(config.defaults.default_script, "./build.sh");
         assert_eq!(config.defaults.timeout, 120);
         assert_eq!(config.projects.patterns.len(), 2);
@@ -568,11 +585,19 @@ mod tests {
 
         assert_eq!(
             config.defaults.task_aliases.get("build"),
-            Some(&vec!["build".to_string(), "compile".to_string(), "make".to_string()])
+            Some(&vec![
+                "build".to_string(),
+                "compile".to_string(),
+                "make".to_string()
+            ])
         );
         assert_eq!(
             config.defaults.task_aliases.get("up"),
-            Some(&vec!["up".to_string(), "start".to_string(), "run".to_string()])
+            Some(&vec![
+                "up".to_string(),
+                "start".to_string(),
+                "run".to_string()
+            ])
         );
     }
 

@@ -169,7 +169,12 @@ pub async fn exec_command(
 
     // Execute with or without timeout
     let result = if let Some(timeout_duration) = options.timeout {
-        match timeout(timeout_duration, wait_for_output(child, options.max_output_size)).await {
+        match timeout(
+            timeout_duration,
+            wait_for_output(child, options.max_output_size),
+        )
+        .await
+        {
             Ok(result) => result?,
             Err(_) => {
                 // Timeout occurred
@@ -232,10 +237,7 @@ async fn wait_for_output(
     });
 
     // Wait for process to complete
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| TaskError::Io(e))?;
+    let status = child.wait().await.map_err(TaskError::Io)?;
 
     // Get output results
     let (stdout, stdout_truncated) = stdout_handle
@@ -256,16 +258,23 @@ async fn wait_for_output(
 }
 
 /// Read from an async reader and truncate if too large
+///
+/// Optimized for memory efficiency:
+/// - Pre-allocates output buffer to avoid repeated reallocations
+/// - Reuses line buffer across iterations instead of allocating new String each time
 async fn read_and_truncate<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
     max_size: usize,
 ) -> (String, bool) {
     let mut buf_reader = BufReader::new(reader);
-    let mut output = String::new();
+    // Pre-allocate output buffer (cap at 64KB to avoid over-allocation for small max_size)
+    let mut output = String::with_capacity(max_size.min(64 * 1024));
+    // Reuse line buffer across iterations (typical line is ~80 chars, allow some margin)
+    let mut line = String::with_capacity(4096);
     let mut truncated = false;
 
     loop {
-        let mut line = String::new();
+        line.clear(); // Reuse buffer instead of allocating new String
         match buf_reader.read_line(&mut line).await {
             Ok(0) => break, // EOF
             Ok(_) => {
@@ -303,7 +312,12 @@ pub fn exec_command_sync(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|e| TaskError::Io(std::io::Error::other(format!("Failed to create runtime: {}", e))))?;
+        .map_err(|e| {
+            TaskError::Io(std::io::Error::other(format!(
+                "Failed to create runtime: {}",
+                e
+            )))
+        })?;
 
     rt.block_on(exec_command(program, args, options))
 }
@@ -418,11 +432,7 @@ impl TaskExecutor {
 }
 
 /// Helper to create an error with suggestion
-pub fn command_error(
-    command: &str,
-    exit_code: Option<i32>,
-    stderr: &str,
-) -> TaskError {
+pub fn command_error(command: &str, exit_code: Option<i32>, stderr: &str) -> TaskError {
     TaskError::CommandFailed {
         command: command.to_string(),
         exit_code,
@@ -453,10 +463,7 @@ mod tests {
             .with_env("KEY", "value")
             .with_max_output(1000);
 
-        assert_eq!(
-            options.working_dir,
-            Some(std::path::PathBuf::from("/tmp"))
-        );
+        assert_eq!(options.working_dir, Some(std::path::PathBuf::from("/tmp")));
         assert_eq!(options.timeout, Some(Duration::from_secs(60)));
         assert_eq!(options.env.get("KEY"), Some(&"value".to_string()));
         assert_eq!(options.max_output_size, 1000);
@@ -516,8 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_command_timeout() {
-        let options = ExecOptions::default()
-            .with_timeout(Duration::from_millis(100));
+        let options = ExecOptions::default().with_timeout(Duration::from_millis(100));
 
         let result = exec_command("sleep", &["10"], &options).await;
 
@@ -541,7 +547,10 @@ mod tests {
 
         let result = exec_command(
             "sh",
-            &["-c", "for i in $(seq 1 100); do echo 'line of output $i'; done"],
+            &[
+                "-c",
+                "for i in $(seq 1 100); do echo 'line of output $i'; done",
+            ],
             &options,
         )
         .await;
@@ -580,12 +589,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_command_spawn_failed() {
-        let result = exec_command(
-            "nonexistent_command_12345",
-            &[],
-            &ExecOptions::default(),
-        )
-        .await;
+        let result = exec_command("nonexistent_command_12345", &[], &ExecOptions::default()).await;
 
         match result {
             Err(TaskError::SpawnFailed { command, .. }) => {
@@ -642,7 +646,10 @@ mod tests {
 
         assert_eq!(executor.default_timeout, Some(Duration::from_secs(30)));
         assert_eq!(executor.working_dir, Some(std::path::PathBuf::from("/tmp")));
-        assert_eq!(executor.env.get("DEFAULT_VAR"), Some(&"default_value".to_string()));
+        assert_eq!(
+            executor.env.get("DEFAULT_VAR"),
+            Some(&"default_value".to_string())
+        );
     }
 
     #[test]
@@ -710,7 +717,12 @@ mod tests {
         let err = command_error("make build", Some(2), "No rule to make target");
 
         match err {
-            TaskError::CommandFailed { command, exit_code, stderr, suggestion } => {
+            TaskError::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+                suggestion,
+            } => {
                 assert_eq!(command, "make build");
                 assert_eq!(exit_code, Some(2));
                 assert!(stderr.contains("No rule"));
@@ -718,6 +730,61 @@ mod tests {
                 assert!(suggestion.is_some());
             }
             _ => panic!("Expected CommandFailed error"),
+        }
+    }
+
+    // TDD: Tests for memory allocation optimization (Step 4 of v0.1.0 cleanup)
+    #[tokio::test]
+    async fn test_read_and_truncate_large_output() {
+        // Test that large output is properly truncated
+        let options = ExecOptions::default().with_max_output(500);
+
+        // Generate 1000 lines of output - should be truncated
+        let result = exec_command(
+            "sh",
+            &["-c", "for i in $(seq 1 1000); do echo 'line $i'; done"],
+            &options,
+        )
+        .await;
+
+        match result {
+            Ok(res) => {
+                assert!(res.stdout_truncated, "Output should be truncated");
+                assert!(res.stdout.contains("[output truncated]"));
+                // Should be close to max_size
+                assert!(
+                    res.stdout.len() <= 600,
+                    "Output too large: {} bytes",
+                    res.stdout.len()
+                );
+            }
+            Err(TaskError::SpawnFailed { .. }) => {
+                eprintln!("Skipping test: sh not available");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_and_truncate_small_output() {
+        // Small output should not be truncated
+        let options = ExecOptions::default().with_max_output(10000);
+
+        let result = exec_command("echo", &["hello world"], &options).await;
+
+        match result {
+            Ok(res) => {
+                assert!(
+                    !res.stdout_truncated,
+                    "Small output should not be truncated"
+                );
+                assert!(!res.stdout.contains("[output truncated]"));
+                assert!(res.stdout.contains("hello world"));
+            }
+            Err(TaskError::SpawnFailed { .. }) => {
+                eprintln!("Skipping test: echo not available");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
         }
     }
 }

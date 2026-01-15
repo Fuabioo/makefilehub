@@ -71,7 +71,7 @@ pub struct FilesFound {
 }
 
 /// Result of build system detection
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct DetectionResult {
     /// The detected runner (first match by priority)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,16 +80,6 @@ pub struct DetectionResult {
     pub available: Vec<RunnerType>,
     /// Details about files found
     pub files_found: FilesFound,
-}
-
-impl Default for DetectionResult {
-    fn default() -> Self {
-        Self {
-            detected: None,
-            available: Vec::new(),
-            files_found: FilesFound::default(),
-        }
-    }
 }
 
 /// Detect which build system a project uses
@@ -190,7 +180,9 @@ fn check_scripts(dir: &Path, config: &Config, result: &mut DetectionResult) {
 
             let script_path = format!("./{}", script_name_clean);
             result.files_found.scripts.push(script_path.clone());
-            result.available.push(RunnerType::Script(script_path.clone()));
+            result
+                .available
+                .push(RunnerType::Script(script_path.clone()));
 
             if result.detected.is_none() {
                 result.detected = Some(RunnerType::Script(script_path));
@@ -253,7 +245,10 @@ mod tests {
         assert!(result.detected.is_some());
         assert_eq!(result.detected.unwrap(), RunnerType::Make);
         assert!(result.files_found.makefile);
-        assert_eq!(result.files_found.makefile_path, Some("Makefile".to_string()));
+        assert_eq!(
+            result.files_found.makefile_path,
+            Some("Makefile".to_string())
+        );
     }
 
     #[test]
@@ -264,7 +259,10 @@ mod tests {
         let result = detect_runner(dir.path(), &default_config());
 
         assert_eq!(result.detected, Some(RunnerType::Make));
-        assert_eq!(result.files_found.makefile_path, Some("makefile".to_string()));
+        assert_eq!(
+            result.files_found.makefile_path,
+            Some("makefile".to_string())
+        );
     }
 
     #[test]
@@ -372,7 +370,10 @@ mod tests {
         // On Unix, non-executable scripts should not be detected
         #[cfg(unix)]
         {
-            assert!(result.detected.is_none() || !matches!(result.detected, Some(RunnerType::Script(_))));
+            assert!(
+                result.detected.is_none()
+                    || !matches!(result.detected, Some(RunnerType::Script(_)))
+            );
         }
     }
 
